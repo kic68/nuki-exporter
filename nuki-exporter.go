@@ -29,7 +29,7 @@ import (
 
 const (
 	// seconds before next loop is started
-	minSleepSeconds = 30
+	minSleepSeconds = 900
 )
 
 var (
@@ -71,16 +71,17 @@ type Credentials struct {
 // NukiDevice Prefix field with Ignore if value is neither a metric nor a label but you want to handle it programmatically
 // NukiDevice Fields without Prefix will be used as metrics value
 type NukiDevice struct {
-	LabelDeviceType      int
-	LabelNukiID          int
-	LabelName            string
-	LabelFirmwareVersion string
-	Mode                 int
-	State                int
-	DoorsensorState      int
-	BatteryChargeState   int
-	NumBatteryCharging   int
-	NumBatteryCritical   int
+	LabelDeviceType          int
+	LabelNukiID              int
+	LabelName                string
+	LabelFirmwareVersion     string
+	Mode                     int
+	State                    int
+	DoorsensorState          int
+	BatteryChargeState       int
+	NumKeypadBatteryCritical int
+	NumBatteryCharging       int
+	NumBatteryCritical       int
 }
 
 // NukiJSON contains full JSON response
@@ -90,14 +91,15 @@ type NukiJSON struct {
 	Name            string `json:"name"`
 	FirmwareVersion string `json:"firmwareVersion"`
 	LastKnownState  struct {
-		Mode               int       `json:"mode"`
-		State              int       `json:"state"`
-		DoorsensorState    int       `json:"doorsensorState"`
-		BatteryChargeState int       `json:"batteryChargeState"`
-		StateName          string    `json:"stateName"`
-		BatteryCritical    bool      `json:"batteryCritical"`
-		BatteryCharging    bool      `json:"batteryCharging"`
-		Timestamp          time.Time `json:"timestamp"`
+		Mode                  int       `json:"mode"`
+		State                 int       `json:"state"`
+		DoorsensorState       int       `json:"doorsensorState"`
+		BatteryChargeState    int       `json:"batteryChargeState"`
+		StateName             string    `json:"stateName"`
+		BatteryCritical       bool      `json:"batteryCritical"`
+		BatteryCharging       bool      `json:"batteryCharging"`
+		KeypadBatteryCritical bool      `json:"keypadBatteryCritical"`
+		Timestamp             time.Time `json:"timestamp"`
 	} `json:"lastKnownState"`
 }
 
@@ -292,7 +294,9 @@ func main() {
 				systemAlive(listenAddress, metricsPath)
 
 				// sleep minSleepSeconds seconds before starting next loop
+				level.Debug(lg).Log("msg", fmt.Sprintf("Starting to sleep"))
 				time.Sleep(time.Second * minSleepSeconds)
+				level.Debug(lg).Log("msg", fmt.Sprintf("Finished sleeping"))
 
 			}
 		},
@@ -342,6 +346,10 @@ func getMetrics() {
 	}
 	// send the metrics request
 	res, err := httpClient.Do(req)
+	if err != nil {
+		level.Warn(lg).Log("msg", fmt.Sprintf("Didn't get a response: %s", err.Error()))
+		return
+	}
 	if res.StatusCode != 200 {
 		// return if we weren't successful
 		body, _ := ioutil.ReadAll(res.Body)
@@ -389,6 +397,15 @@ func getMetrics() {
 			nukiDevice.NumBatteryCharging = 1
 		default:
 			nukiDevice.NumBatteryCharging = 0
+		}
+
+		switch nukiJSONDevice.LastKnownState.KeypadBatteryCritical {
+		case false:
+			nukiDevice.NumKeypadBatteryCritical = 0
+		case true:
+			nukiDevice.NumKeypadBatteryCritical = 1
+		default:
+			nukiDevice.NumKeypadBatteryCritical = 0
 		}
 
 		nukiDevice.LabelDeviceType = nukiJSONDevice.DeviceType
